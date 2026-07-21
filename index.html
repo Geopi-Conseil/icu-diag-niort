@@ -29,6 +29,16 @@
       <p class="panel-intro">ICU DIAG permet d'identifier les secteurs urbains les plus exposes et les plus vulnerables aux effets d'ilot de chaleur urbain. Recherchez une adresse ou cliquez sur un ilot, un batiment ou un etablissement de la carte pour obtenir un diagnostic.</p>
     </div>
 
+    <div class="panel" id="legend-panel">
+      <p class="section-title">Comment lire la carte</p>
+      <p class="legend-explain">Les zones grises representent le reste de la commune. Les zones colorees sont le <b>dernier quartile</b> de l'indice de chaleur cumulative (bati dense, peu vegetalise, albedo faible, temperature elevee), du orange au rouge fonce selon l'intensite.</p>
+      <div id="legend-gradient"></div>
+      <div id="legend-labels"><span>0.53</span><span>indice de chaleur cumulative</span><span>0.79</span></div>
+      <div class="legend-points">
+        <div><span class="dot-ring"></span> Contour renforce : ilot le plus a risque</div>
+      </div>
+    </div>
+
     <div class="panel">
       <label class="checkbox-row"><input type="checkbox" id="layer-albedo" /> Albedo de surface</label>
       <label class="checkbox-row"><input type="checkbox" id="layer-vegetation" /> Couvert vegetal</label>
@@ -111,14 +121,6 @@
 
     </div>
 
-    <div class="panel" id="legend-panel">
-      <p class="section-title">Legende</p>
-      <div id="legend-gradient"></div>
-      <div id="legend-labels"><span>Faible</span><span>Indice de chaleur</span><span>Eleve</span></div>
-      <div class="legend-points">
-        <div><span class="dot-ring"></span> Dernier quartile (le plus a risque)</div>
-      </div>
-    </div>
 
   </aside>
 

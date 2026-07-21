@@ -72,14 +72,12 @@ function loadZones() {
 
 function styleZone(feat) {
   const p = feat.properties;
-  const t = percentileRank("indice_chaleur", p.indice_chaleur) / 100;
   const isPrio = p.is_priority === 1;
-  return {
-    fillColor: colorForFraction(t),
-    fillOpacity: 0.55,
-    color: isPrio ? "#e0182f" : "#ffffff55",
-    weight: isPrio ? 1.6 : 0.3,
-  };
+  if (isPrio) {
+    const t = percentileRank("indice_chaleur", p.indice_chaleur) / 100;
+    return { fillColor: colorForFraction(t), fillOpacity: 0.75, color: "#e0182f", weight: 1.8 };
+  }
+  return { fillColor: "#8a8878", fillOpacity: 0.08, color: "#8a8878", weight: 0.3, opacity: 0.3 };
 }
 
 function percentileRank(kind, value) {
@@ -100,11 +98,11 @@ function percentileRank(kind, value) {
 function makeEtabIcon(type, isPrio) {
   const config = { ecole: ["#f5a623", "ti-school"], ehpad: ["#8a2be2", "ti-heart"], creche: ["#00b4b4", "ti-baby-carriage"] };
   const [bg, icon] = config[type];
-  const size = isPrio ? 26 : 22;
-  const border = isPrio ? "2.5px solid #e0182f" : "1px solid #222";
+  const size = isPrio ? 18 : 14;
+  const border = isPrio ? "2px solid #e0182f" : "0.75px solid #222";
   return L.divIcon({
     className: "etab-icon",
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};border:${border};display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.4);"><i class="ti ${icon}" style="color:#fff;font-size:${size-12}px;"></i></div>`,
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};border:${border};display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.4);"><i class="ti ${icon}" style="color:#fff;font-size:${Math.max(size-6,8)}px;"></i></div>`,
     iconSize: [size, size], iconAnchor: [size/2, size/2],
   });
 }
@@ -138,11 +136,24 @@ function refreshEtablissements() {
 });
 
 // ---------- Rasters (albedo, vegetation, LST) ----------
+function updateZonesVisibility() {
+  const anyRasterOn = ["layer-albedo", "layer-vegetation", "layer-lst"].some(id => document.getElementById(id).checked);
+  if (!zonesLayer) return;
+  zonesLayer.eachLayer(l => {
+    const p = l.feature.properties;
+    if (p.is_priority === 1) {
+      l.setStyle({ fillOpacity: anyRasterOn ? 0.12 : 0.75, opacity: anyRasterOn ? 0.35 : 1 });
+    } else {
+      l.setStyle({ fillOpacity: anyRasterOn ? 0.02 : 0.08, opacity: anyRasterOn ? 0.08 : 0.3 });
+    }
+  });
+}
+
 function toggleRaster(kind, checkboxId) {
   document.getElementById(checkboxId).addEventListener("change", (e) => {
     if (e.target.checked) {
       fetch(`data/niort_${kind}.json`).then(r => r.json()).then(meta => {
-        rasterLayers[kind] = L.imageOverlay(`data/niort_${kind}.png`, meta.bounds, { opacity: 0.8, pane: "rasterPane" }).addTo(map);
+        rasterLayers[kind] = L.imageOverlay(`data/niort_${kind}.png`, meta.bounds, { opacity: 0.85, pane: "rasterPane" }).addTo(map);
       });
       if (kind === "albedo" || kind === "vegetation") {
         GeoTIFF.fromUrl(`data/niort_${kind}_precise.tif`)
@@ -158,6 +169,7 @@ function toggleRaster(kind, checkboxId) {
       if (rasterLayers[kind]) { map.removeLayer(rasterLayers[kind]); rasterLayers[kind] = null; }
       if (kind === "albedo" || kind === "vegetation") precise[kind] = null;
     }
+    updateZonesVisibility();
   });
 }
 toggleRaster("albedo", "layer-albedo");
