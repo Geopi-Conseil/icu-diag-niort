@@ -9,7 +9,7 @@ L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
   attribution: "Esri World Imagery", maxZoom: 19
 }).addTo(map);
 
-// ---------- Etat ----------
+// ---------- État ----------
 let zonesLayer = null;
 let zonesData = null;
 let percentiles = null;
@@ -43,7 +43,7 @@ function colorForFraction(t, ramp) {
   return `rgb(${stops[stops.length-1][1].join(",")})`;
 }
 
-// ---------- Chargement des donnees ----------
+// ---------- Chargement des données ----------
 Promise.all([
   fetch("data/zones.geojson").then(r => r.json()),
   fetch("data/percentiles.json").then(r => r.json()),
@@ -149,7 +149,7 @@ function percentileRank(kind, value) {
   return 50;
 }
 
-// ---------- Etablissements ----------
+// ---------- Établissements ----------
 function makeEtabIcon(type, isPrio) {
   const config = { ecole: ["#f5a623", "ti-school"], ehpad: ["#8a2be2", "ti-heart"], creche: ["#00b4b4", "ti-baby-carriage"] };
   const [bg, icon] = config[type];
@@ -184,7 +184,7 @@ function refreshEtablissements() {
 }
 document.getElementById("layer-etablissements").addEventListener("change", refreshEtablissements);
 
-// ---------- Rasters (albedo, vegetation, LST) ----------
+// ---------- Rasters (albédo, végétation, LST) ----------
 function updateZonesVisibility() {
   const anyRasterOn = ["layer-albedo", "layer-vegetation", "layer-lst"].some(id => document.getElementById(id).checked);
   if (!zonesLayer) return;
@@ -262,7 +262,7 @@ function sampleVegetationBuffer(lat, lon, radiusMeters) {
   return 100*nVeg/nIn;
 }
 
-// ---------- Batiments (WFS IGN dynamique) ----------
+// ---------- Bâtiments (WFS IGN dynamique) ----------
 function findZoneAt(lat, lon) {
   if (!zonesData) return null;
   const pt = [lon, lat];
@@ -305,6 +305,8 @@ function polygonCenter(coords) {
   return { lon: sx/ring.length, lat: sy/ring.length };
 }
 
+let selectedBuildingLayer = null;
+
 function loadBuildingsInView() {
   if (!buildingsEnabled) return;
   if (map.getZoom() < 16) {
@@ -318,10 +320,19 @@ function loadBuildingsInView() {
   const url = `https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAME=BDTOPO_V3:batiment&SRSNAME=EPSG:4326&BBOX=${bbox}&outputFormat=application/json&COUNT=1500`;
   fetch(url).then(r => r.json()).then(gj => {
     if (buildingsLayer) map.removeLayer(buildingsLayer);
+    selectedBuildingLayer = null;
     buildingsLayer = L.geoJSON(gj, {
       pane: "buildingsPane", style: styleBuilding,
       onEachFeature: (feat, layer) => {
-        layer.on("click", () => analyseBuilding(feat));
+        layer.on("click", () => {
+          if (selectedBuildingLayer && selectedBuildingLayer !== layer) {
+            selectedBuildingLayer.setStyle(styleBuilding(selectedBuildingLayer.feature));
+          }
+          layer.setStyle({ color: "#ffe15a", weight: 3, fillOpacity: 0.95 });
+          layer.bringToFront();
+          selectedBuildingLayer = layer;
+          analyseBuilding(feat);
+        });
       }
     }).addTo(map);
   }).catch(() => {});
@@ -372,8 +383,8 @@ document.getElementById("search-btn").addEventListener("click", () => {
     });
 });
 
-// ---------- Solutions cles en main ----------
-function buildSolutions(props, nearbyEhpad) {
+// ---------- Solutions clés en main ----------
+function buildSolutions(props, nearbyEhpad, nearbyEcole) {
   const solutions = [];
   const bur = props.bur || 0, ver = props.ver || 0, lcz = props.lcz_int, alb = props.alb_mean;
   const lowVeg = ver < 15;
@@ -382,61 +393,83 @@ function buildSolutions(props, nearbyEhpad) {
 
   let needsAmenagement = false;
 
-  if (denseBuiltLowRise && lowVeg) {
+  if (nearbyEcole) {
     solutions.push({
-      tag: "amenagement", tagLabel: "Amenagement", icon: "ti-sun-off",
-      title: "Ombrage de voirie",
-      text: "Bati bas, peu d'arbres a proximite : voiles pare-soleil ou structures vegetalisees adaptees aux rues et espaces publics.",
-      link: "https://www.cerema.fr/fr/actualites/adapter-voirie-urbaine-au-changement-climatique-cerema",
-      linkLabel: "Recueil de solutions, Cerema",
+      tag: "amenagement", tagLabel: "Aménagement", icon: "ti-school",
+      title: "Arbres et végétaux dans la cour d'école",
+      text: "Une école primaire est à proximité : ombrage et rafraîchissement par évapotranspiration, un des leviers les plus rapides et les moins coûteux.",
+      impact: "-4°C", delai: "0 à 1 mois", cout: "30 à 60 euros HT/m2",
+      link: "https://plusfraichemaville.fr/fiche-solution/arbres-vegetaux-cour-ecole",
+      linkLabel: "Fiche solution, ADEME",
     });
     needsAmenagement = true;
   }
-  if (bur > 40 || lowVeg) {
+  if (lowVeg) {
     solutions.push({
-      tag: "amenagement", tagLabel: "Amenagement", icon: "ti-plant-2",
-      title: "Vegetalisation et desimpermeabilisation",
-      text: bur > 40
-        ? "Taux de surface batie eleve, peu de sol permeable : retours d'experience sur des amenagements comparables."
-        : "Faible couvert vegetal mesure sur cet ilot : especes adaptees, couts et delais de mise en oeuvre.",
-      link: "https://agirpourlatransition.ademe.fr/collectivites/conseils/adaptation/vegetalisation",
-      linkLabel: "Plus fraiche ma ville, ADEME",
+      tag: "amenagement", tagLabel: "Aménagement", icon: "ti-plant-2",
+      title: "Planter un arbre",
+      text: "Faible couvert végétal mesuré sur cet îlot : ombrage et rafraîchissement par évapotranspiration, délai de mise en oeuvre court.",
+      impact: "-4°C", delai: "0 à 1 mois", cout: "25 à 1000 euros HT/m2",
+      link: "https://plusfraichemaville.fr/fiche-solution/planter-un-arbre",
+      linkLabel: "Fiche solution, ADEME",
+    });
+    needsAmenagement = true;
+  }
+  if (bur > 40) {
+    solutions.push({
+      tag: "amenagement", tagLabel: "Aménagement", icon: "ti-droplet",
+      title: "Revêtement drainant / perméable",
+      text: "Taux de surface bâtie élevé, peu de sol perméable : infiltre les eaux pluviales et réduit l'effet d'îlot de chaleur.",
+      impact: "-2.1°C", delai: "1 à 2 mois", cout: "5 à 150 euros HT/m2",
+      link: "https://plusfraichemaville.fr/fiche-solution/revetement-drainant",
+      linkLabel: "Fiche solution, ADEME",
     });
     needsAmenagement = true;
   }
   if (darkSurface) {
     solutions.push({
-      tag: "amenagement", tagLabel: "Amenagement", icon: "ti-brightness-up",
-      title: "Revetements a albedo eleve",
-      text: `Albedo mesure de ${alb.toFixed(2)}, parmi les plus sombres de la commune : peintures ou revetements reflechissants pour toitures et chaussees.`,
+      tag: "amenagement", tagLabel: "Aménagement", icon: "ti-brightness-up",
+      title: "Revêtement à albédo élevé",
+      text: `Albédo mesuré de ${alb.toFixed(2)}, parmi les plus sombres de la commune : peinture ou revêtement réfléchissant pour toitures et chaussées.`,
+      impact: "-3°C", delai: "1 à 3 mois", cout: "20 à 35 euros HT/m2",
       link: "https://plusfraichemaville.fr/fiche-solution/revetement-albedo-eleve",
       linkLabel: "Fiche solution, ADEME",
     });
     needsAmenagement = true;
   }
+  if (denseBuiltLowRise && lowVeg) {
+    solutions.push({
+      tag: "amenagement", tagLabel: "Aménagement", icon: "ti-sun-off",
+      title: "Structure d'ombrage",
+      text: "Bâti bas, peu d'arbres à proximité : voiles ou structures d'ombrage sur rue ou espace public. Impact plus modeste que la végétalisation, à considérer en complément.",
+      impact: "-0.2°C", delai: "0 à 3 mois", cout: "500 à 1000 euros HT/m2",
+      link: "https://plusfraichemaville.fr/fiche-solution/structure-ombrage",
+      linkLabel: "Fiche solution, ADEME",
+    });
+  }
   if ((props.pct_65plus_est != null && props.pct_65plus_est > 20) || nearbyEhpad) {
     solutions.push({
       tag: "social", tagLabel: "Accompagnement social", icon: "ti-heart-handshake",
-      title: "Registre communal des personnes vulnerables",
-      text: "Part de personnes agees elevee a proximite : obligation legale du maire, permet un contact prioritaire en cas d'alerte canicule.",
+      title: "Registre communal des personnes vulnérables",
+      text: "Part de personnes âgées élevée à proximité : obligation légale du maire, permet un contact prioritaire en cas d'alerte canicule.",
       link: "https://www.service-public.gouv.fr/demarches-silence-vaut-accord/demarches/1635",
-      linkLabel: "Demarche officielle, Service-Public.fr",
+      linkLabel: "Démarche officielle, Service-Public.fr",
     });
   }
   if (nearbyEhpad) {
     solutions.push({
       tag: "social", tagLabel: "Accompagnement social", icon: "ti-building-hospital",
-      title: "Piece rafraichie en EHPAD",
-      text: "Un EHPAD a proximite : chaque etablissement doit legalement disposer d'un local rafraichi accessible aux residents en cas de forte chaleur.",
+      title: "Pièce rafraîchie en EHPAD",
+      text: "Un EHPAD à proximité : chaque établissement doit légalement disposer d'un local rafraîchi accessible aux résidents en cas de forte chaleur.",
       link: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032610131",
-      linkLabel: "Article D312-161, Legifrance",
+      linkLabel: "Article D312-161, Légifrance",
     });
   }
   if (needsAmenagement) {
     solutions.push({
       tag: "financement", tagLabel: "Financement", icon: "ti-coin",
       title: "Fonds vert, mesure renaturation",
-      text: "Finance a la fois les diagnostics d'ilots de chaleur et les travaux de vegetalisation, desimpermeabilisation ou revetements reflechissants.",
+      text: "Finance à la fois les diagnostics d'îlots de chaleur et les travaux de végétalisation, désimperméabilisation ou revêtements réfléchissants.",
       link: "https://aides-territoires.beta.gouv.fr/aides/a086-financer-des-solutions-dadaptation-au-changem/",
       linkLabel: "Fiche aide, Aides-territoires",
     });
@@ -445,13 +478,13 @@ function buildSolutions(props, nearbyEhpad) {
 }
 
 // ---------- Rendu du panneau diagnostic ----------
-function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyEhpad }) {
+function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyEhpad, nearbyEcole }) {
   document.getElementById("diag-empty").style.display = "none";
   document.getElementById("diag-content").style.display = "block";
   document.getElementById("diag-address").textContent = label;
 
   const badge = document.getElementById("diag-badge");
-  const badgeMap = { zone: "Ilot", ecole: "Ecole primaire", ehpad: "EHPAD", creche: "Creche", address: "Adresse recherchee", batiment: "Batiment" };
+  const badgeMap = { zone: "Îlot", ecole: "École primaire", ehpad: "EHPAD", creche: "Crèche", address: "Adresse recherchée", batiment: "Bâtiment" };
   badge.textContent = badgeMap[badgeType] || "";
   badge.className = "badge " + badgeType;
 
@@ -470,11 +503,11 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
     const pct = percentileRank("indice_chaleur", indice);
     document.getElementById("diag-indice").textContent = indice.toFixed(2);
     fillBar("diag-indice-fill", indice, INDICE_RANGE);
-    document.getElementById("diag-indice-context").textContent = `Plus eleve que ${Math.round(pct)}% des ilots de Niort`;
+    document.getElementById("diag-indice-context").textContent = `Plus élevé que ${Math.round(pct)}% des îlots de Niort`;
   } else {
     document.getElementById("diag-indice").textContent = "-";
     document.getElementById("diag-indice-fill").style.width = "0%";
-    document.getElementById("diag-indice-context").textContent = "Non disponible a cet endroit";
+    document.getElementById("diag-indice-context").textContent = "Non disponible à cet endroit";
   }
 
   if (albVal != null) {
@@ -485,7 +518,7 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
   } else {
     document.getElementById("diag-albedo").textContent = "-";
     document.getElementById("diag-albedo-fill").style.width = "0%";
-    document.getElementById("diag-albedo-context").textContent = "Non disponible a cet endroit";
+    document.getElementById("diag-albedo-context").textContent = "Non disponible à cet endroit";
   }
 
   const hasDemo = zoneProps && zoneProps.is_priority === 1 && zoneProps.population_est != null;
@@ -508,13 +541,13 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
     if (age != null) fillBar("diag-age-fill", age, demoStats.age);
     else document.getElementById("diag-age-fill").style.width = "0%";
     document.getElementById("scale-age").innerHTML = `<span>${demoStats.age[0].toFixed(0)}%</span><span>${demoStats.age[1].toFixed(0)}%</span>`;
-    document.getElementById("diag-age-context").textContent = age != null ? `Soit ${age.toFixed(0)}% de la population de l'ilot` : "";
+    document.getElementById("diag-age-context").textContent = age != null ? `Soit ${age.toFixed(0)}% de la population de l'îlot` : "";
   }
 
   const vegRow = document.getElementById("context-veg");
   if (veg100 != null) {
     vegRow.style.display = "flex";
-    document.getElementById("diag-veg100").textContent = Math.round(veg100) + "% de couvert vegetal";
+    document.getElementById("diag-veg100").textContent = Math.round(veg100) + "% de couvert végétal";
   } else {
     vegRow.style.display = "none";
   }
@@ -522,7 +555,7 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
   const solutionsSection = document.getElementById("solutions-section");
   const solutionsList = document.getElementById("solutions-list");
   if (zoneProps) {
-    const solutions = buildSolutions(zoneProps, nearbyEhpad);
+    const solutions = buildSolutions(zoneProps, nearbyEhpad, nearbyEcole);
     if (solutions.length) {
       solutionsSection.style.display = "block";
       solutionsList.innerHTML = solutions.map(s => `
@@ -530,6 +563,11 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
           <span class="solution-tag ${s.tag}">${s.tagLabel}</span>
           <p class="solution-title"><i class="ti ${s.icon}"></i> ${s.title}</p>
           <p class="solution-text">${s.text}</p>
+          ${s.impact ? `<div class="solution-stats">
+            <span><i class="ti ti-temperature-minus"></i> ${s.impact}</span>
+            <span><i class="ti ti-clock"></i> ${s.delai}</span>
+            <span><i class="ti ti-cash"></i> ${s.cout}</span>
+          </div>` : ""}
           <a class="solution-link" href="${s.link}" target="_blank" rel="noopener">${s.linkLabel} <i class="ti ti-external-link"></i></a>
         </div>
       `).join("");
@@ -543,6 +581,13 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
 
 function isNearEhpad(lat, lon, radiusMeters) {
   return allEtablissements.ehpad.some(f => {
+    const [elon, elat] = f.geometry.coordinates;
+    const d = haversine(lat, lon, elat, elon);
+    return d < radiusMeters;
+  });
+}
+function isNearEcole(lat, lon, radiusMeters) {
+  return allEtablissements.ecoles.some(f => {
     const [elon, elat] = f.geometry.coordinates;
     const d = haversine(lat, lon, elat, elon);
     return d < radiusMeters;
@@ -562,9 +607,10 @@ function analyseZone(feature) {
   searchMarker = L.marker([center.lat, center.lon]).addTo(map);
   const veg100 = sampleVegetationBuffer(center.lat, center.lon, 100);
   renderDiagnostic({
-    label: `Ilot LCZ ${p.lcz_int}`,
+    label: `Îlot LCZ ${p.lcz_int}`,
     badgeType: "zone", zoneProps: p, albedo: null, veg100,
     nearbyEhpad: isNearEhpad(center.lat, center.lon, 300),
+    nearbyEcole: isNearEcole(center.lat, center.lon, 300),
   });
 }
 
@@ -579,6 +625,7 @@ function analyseEtablissement(feature, type) {
     label: feature.properties.nom_norm || type,
     badgeType: type, zoneProps: zone ? zone.properties : null, albedo: null, veg100,
     nearbyEhpad: type === "ehpad" ? true : isNearEhpad(lat, lon, 300),
+    nearbyEcole: type === "ecole" ? true : isNearEcole(lat, lon, 300),
   });
 }
 
@@ -593,6 +640,7 @@ function analyseBuilding(feature) {
     label: usage, badgeType: "batiment", zoneProps: zone ? zone.properties : null,
     albedo: feature.properties._albedo, veg100,
     nearbyEhpad: isNearEhpad(center.lat, center.lon, 300),
+    nearbyEcole: isNearEcole(center.lat, center.lon, 300),
   });
 }
 
@@ -606,10 +654,11 @@ function analyseAddress(label, lat, lon) {
   renderDiagnostic({
     label, badgeType: "address", zoneProps: zone ? zone.properties : null, albedo, veg100,
     nearbyEhpad: isNearEhpad(lat, lon, 300),
+    nearbyEcole: isNearEcole(lat, lon, 300),
   });
 }
 
-// ---------- Legendes depliables : chaque case a cocher revele sa legende ----------
+// ---------- Légendes dépliables : chaque case à cocher révèle sa légende ----------
 const LEGEND_MAP = {
   "mode-indice": "legend-indice",
   "mode-priority": "legend-priority",
@@ -630,7 +679,7 @@ Object.entries(LEGEND_MAP).forEach(([checkboxId, legendId]) => {
   });
 });
 
-// ---------- Valeurs dynamiques des legendes socio-demographiques ----------
+// ---------- Valeurs dynamiques des légendes socio-démographiques ----------
 function updateDemoLegendLabels() {
   document.getElementById("labels-population").innerHTML =
     `<span>${Math.round(demoStats.population[0])} hab.</span><span>${Math.round(demoStats.population[1])} hab.</span>`;

@@ -1,6 +1,6 @@
 """
-Convertit un raster (albedo, vegetation ou LST) en PNG geolocalise (EPSG:4326) pour l'affichage,
-plus un GeoTIFF compact 16 bits pour la lecture precise cote navigateur.
+Convertit un raster (albédo, végétation ou LST) en PNG géolocalisé (EPSG:4326) pour l'affichage,
+plus un GeoTIFF compact 16 bits pour la lecture précise côté navigateur.
 
 Usage : python convert_raster.py <src.tif> <city> <kind> <out_dir>
   kind in {albedo, vegetation, lst}
