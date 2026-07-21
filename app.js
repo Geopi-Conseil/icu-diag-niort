@@ -1,0 +1,520 @@
+// ---------- Carte de base ----------
+const map = L.map("map", { zoomControl: true }).setView([46.323, -0.459], 13);
+map.createPane("rasterPane"); map.getPane("rasterPane").style.zIndex = 350;
+map.createPane("zonesPane"); map.getPane("zonesPane").style.zIndex = 370;
+map.createPane("buildingsPane"); map.getPane("buildingsPane").style.zIndex = 400;
+map.createPane("pointsPane"); map.getPane("pointsPane").style.zIndex = 450;
+
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+  attribution: "Esri World Imagery", maxZoom: 19
+}).addTo(map);
+
+// ---------- Etat ----------
+let zonesLayer = null;
+let zonesData = null;
+let percentiles = null;
+let allEtablissements = { ecoles: [], ehpad: [], creches: [] };
+let rasterLayers = { albedo: null, vegetation: null, lst: null };
+let precise = { albedo: null, vegetation: null };
+let buildingsLayer = null;
+let buildingsEnabled = false;
+let buildingsFetchTimer = null;
+let searchMarker = null;
+let boundaryLayer = null;
+
+const HOT_STOPS = {
+  albedo: [[0,[10,5,5]],[0.15,[90,10,10]],[0.35,[170,25,15]],[0.55,[225,90,15]],[0.75,[245,165,40]],[0.9,[255,225,90]],[1,[255,252,225]]],
+};
+
+function colorForFraction(t, ramp) {
+  t = Math.max(0, Math.min(1, t));
+  const stops = ramp || [[0,[44,123,182]],[0.35,[255,255,191]],[0.6,[253,174,97]],[0.85,[215,25,28]],[1,[92,0,0]]];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0,c0] = stops[i], [t1,c1] = stops[i+1];
+    if (t >= t0 && t <= t1) {
+      const f = (t-t0)/(t1-t0);
+      const rgb = c0.map((v,i2) => Math.round(v + f*(c1[i2]-v)));
+      return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    }
+  }
+  return `rgb(${stops[stops.length-1][1].join(",")})`;
+}
+
+// ---------- Chargement des donnees ----------
+Promise.all([
+  fetch("data/zones.geojson").then(r => r.json()),
+  fetch("data/percentiles.json").then(r => r.json()),
+  fetch("data/boundary.geojson").then(r => r.json()),
+  fetch("data/ecoles.geojson").then(r => r.json()),
+  fetch("data/ehpad.geojson").then(r => r.json()),
+  fetch("data/creches.geojson").then(r => r.json()),
+]).then(([zones, pct, boundary, ecoles, ehpad, creches]) => {
+  zonesData = zones;
+  percentiles = pct;
+  allEtablissements = { ecoles: ecoles.features, ehpad: ehpad.features, creches: creches.features };
+
+  boundaryLayer = L.geoJSON(boundary, { style: { color: "#33322c", weight: 1.5, fill: false } }).addTo(map);
+  map.fitBounds(boundaryLayer.getBounds(), { padding: [10,10] });
+
+  loadZones();
+  refreshEtablissements();
+});
+
+function loadZones() {
+  zonesLayer = L.geoJSON(zonesData, {
+    pane: "zonesPane",
+    style: styleZone,
+    onEachFeature: (feat, layer) => {
+      layer.on("click", () => analyseZone(feat));
+    }
+  }).addTo(map);
+}
+
+function styleZone(feat) {
+  const p = feat.properties;
+  const t = percentileRank("indice_chaleur", p.indice_chaleur) / 100;
+  const isPrio = p.is_priority === 1;
+  return {
+    fillColor: colorForFraction(t),
+    fillOpacity: 0.55,
+    color: isPrio ? "#e0182f" : "#ffffff55",
+    weight: isPrio ? 1.6 : 0.3,
+  };
+}
+
+function percentileRank(kind, value) {
+  const table = percentiles[kind];
+  if (!table || value == null) return 50;
+  if (value <= table[0]) return 0;
+  if (value >= table[table.length-1]) return 100;
+  for (let i = 0; i < table.length-1; i++) {
+    if (value >= table[i] && value <= table[i+1]) {
+      const f = (value - table[i]) / (table[i+1] - table[i] || 1);
+      return i + f;
+    }
+  }
+  return 50;
+}
+
+// ---------- Etablissements ----------
+function makeEtabIcon(type, isPrio) {
+  const config = { ecole: ["#f5a623", "ti-school"], ehpad: ["#8a2be2", "ti-heart"], creche: ["#00b4b4", "ti-baby-carriage"] };
+  const [bg, icon] = config[type];
+  const size = isPrio ? 26 : 22;
+  const border = isPrio ? "2.5px solid #e0182f" : "1px solid #222";
+  return L.divIcon({
+    className: "etab-icon",
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};border:${border};display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.4);"><i class="ti ${icon}" style="color:#fff;font-size:${size-12}px;"></i></div>`,
+    iconSize: [size, size], iconAnchor: [size/2, size/2],
+  });
+}
+
+let etabLayers = { ecoles: null, ehpad: null, creches: null };
+
+function refreshEtablissements() {
+  const configs = [
+    ["ecoles", "ecole", "layer-ecoles"],
+    ["ehpad", "ehpad", "layer-ehpad"],
+    ["creches", "creche", "layer-creches"],
+  ];
+  for (const [key, type, checkboxId] of configs) {
+    if (etabLayers[key]) map.removeLayer(etabLayers[key]);
+    const checked = document.getElementById(checkboxId).checked;
+    if (!checked) continue;
+    etabLayers[key] = L.layerGroup(
+      allEtablissements[key].map(f => {
+        const [lon, lat] = f.geometry.coordinates;
+        const isPrio = !!f.properties.zone_prioritaire_chaleur;
+        const marker = L.marker([lat, lon], { icon: makeEtabIcon(type, isPrio), pane: "pointsPane" });
+        marker.bindTooltip(f.properties.nom_norm || type, { direction: "top" });
+        marker.on("click", () => analyseEtablissement(f, type));
+        return marker;
+      })
+    ).addTo(map);
+  }
+}
+["layer-ecoles", "layer-ehpad", "layer-creches"].forEach(id => {
+  document.getElementById(id).addEventListener("change", refreshEtablissements);
+});
+
+// ---------- Rasters (albedo, vegetation, LST) ----------
+function toggleRaster(kind, checkboxId) {
+  document.getElementById(checkboxId).addEventListener("change", (e) => {
+    if (e.target.checked) {
+      fetch(`data/niort_${kind}.json`).then(r => r.json()).then(meta => {
+        rasterLayers[kind] = L.imageOverlay(`data/niort_${kind}.png`, meta.bounds, { opacity: 0.8, pane: "rasterPane" }).addTo(map);
+      });
+      if (kind === "albedo" || kind === "vegetation") {
+        GeoTIFF.fromUrl(`data/niort_${kind}_precise.tif`)
+          .then(t => t.getImage())
+          .then(img => img.readRasters().then(r => ({ data: r[0], width: img.getWidth(), height: img.getHeight() })))
+          .then(({ data, width, height }) => {
+            fetch(`data/niort_${kind}.json`).then(r => r.json()).then(meta => {
+              precise[kind] = { data, width, height, bounds: meta.bounds };
+            });
+          });
+      }
+    } else {
+      if (rasterLayers[kind]) { map.removeLayer(rasterLayers[kind]); rasterLayers[kind] = null; }
+      if (kind === "albedo" || kind === "vegetation") precise[kind] = null;
+    }
+  });
+}
+toggleRaster("albedo", "layer-albedo");
+toggleRaster("vegetation", "layer-vegetation");
+toggleRaster("lst", "layer-lst");
+
+function sampleRaster(kind, lat, lon, scale) {
+  const p = precise[kind];
+  if (!p) return null;
+  const [[south, west], [north, east]] = p.bounds;
+  if (lat < south || lat > north || lon < west || lon > east) return null;
+  const px = Math.floor(((lon - west) / (east - west)) * p.width);
+  const py = Math.floor(((north - lat) / (north - south)) * p.height);
+  if (px < 0 || px >= p.width || py < 0 || py >= p.height) return null;
+  const raw = p.data[py * p.width + px];
+  if (raw === 0) return null;
+  return raw / scale;
+}
+
+function sampleVegetationBuffer(lat, lon, radiusMeters) {
+  const p = precise.vegetation;
+  if (!p) return null;
+  const [[south, west], [north, east]] = p.bounds;
+  const degLat = 1/111320, degLon = 1/(111320*Math.cos(lat*Math.PI/180));
+  const rLat = radiusMeters*degLat, rLon = radiusMeters*degLon;
+  let nIn = 0, nVeg = 0;
+  for (let dLat=-rLat; dLat<=rLat; dLat+=Math.max(rLat/20,1e-6)) {
+    for (let dLon=-rLon; dLon<=rLon; dLon+=Math.max(rLon/20,1e-6)) {
+      const dist = Math.sqrt((dLat/degLat)**2 + (dLon/degLon)**2);
+      if (dist > radiusMeters) continue;
+      const plat = lat+dLat, plon = lon+dLon;
+      if (plat<south||plat>north||plon<west||plon>east) continue;
+      const px = Math.floor(((plon-west)/(east-west))*p.width);
+      const py = Math.floor(((north-plat)/(north-south))*p.height);
+      if (px<0||px>=p.width||py<0||py>=p.height) continue;
+      nIn++;
+      if (p.data[py*p.width+px] !== 0) nVeg++;
+    }
+  }
+  if (nIn === 0) return null;
+  return 100*nVeg/nIn;
+}
+
+// ---------- Batiments (WFS IGN dynamique) ----------
+function findZoneAt(lat, lon) {
+  if (!zonesData) return null;
+  const pt = [lon, lat];
+  for (const f of zonesData.features) {
+    if (pointInFeature(pt, f.geometry)) return f;
+  }
+  return null;
+}
+function pointInFeature(pt, geom) {
+  if (geom.type === "Polygon") return pointInPolygon(pt, geom.coordinates);
+  if (geom.type === "MultiPolygon") return geom.coordinates.some(c => pointInPolygon(pt, c));
+  return false;
+}
+function pointInPolygon(pt, rings) {
+  const ring = rings[0];
+  let inside = false;
+  for (let i=0, j=ring.length-1; i<ring.length; j=i++) {
+    const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+    const intersect = ((yi>pt[1]) !== (yj>pt[1])) && (pt[0] < (xj-xi)*(pt[1]-yi)/(yj-yi)+xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function styleBuilding(feat) {
+  const center = polygonCenter(feat.geometry.coordinates);
+  const albedo = sampleRaster("albedo", center.lat, center.lon, 10000);
+  feat.properties._albedo = albedo;
+  feat.properties._center = center;
+  return {
+    fillColor: albedo != null ? colorForFraction((albedo-0.15)/(0.40-0.15), HOT_STOPS.albedo) : "#cccccc",
+    fillOpacity: albedo != null ? 0.9 : 0.15,
+    color: "#ffffffaa", weight: 0.6,
+  };
+}
+function polygonCenter(coords) {
+  const ring = Array.isArray(coords[0][0][0]) ? coords[0][0] : coords[0];
+  let sx=0, sy=0;
+  ring.forEach(([x,y]) => { sx+=x; sy+=y; });
+  return { lon: sx/ring.length, lat: sy/ring.length };
+}
+
+function loadBuildingsInView() {
+  if (!buildingsEnabled) return;
+  if (map.getZoom() < 16) {
+    if (buildingsLayer) { map.removeLayer(buildingsLayer); buildingsLayer = null; }
+    document.getElementById("buildings-hint").style.display = "block";
+    return;
+  }
+  document.getElementById("buildings-hint").style.display = "none";
+  const b = map.getBounds();
+  const bbox = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()},EPSG:4326`;
+  const url = `https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAME=BDTOPO_V3:batiment&SRSNAME=EPSG:4326&BBOX=${bbox}&outputFormat=application/json&COUNT=1500`;
+  fetch(url).then(r => r.json()).then(gj => {
+    if (buildingsLayer) map.removeLayer(buildingsLayer);
+    buildingsLayer = L.geoJSON(gj, {
+      pane: "buildingsPane", style: styleBuilding,
+      onEachFeature: (feat, layer) => {
+        layer.on("click", () => analyseBuilding(feat));
+      }
+    }).addTo(map);
+  }).catch(() => {});
+}
+document.getElementById("layer-buildings").addEventListener("change", (e) => {
+  buildingsEnabled = e.target.checked;
+  if (buildingsEnabled) loadBuildingsInView();
+  else if (buildingsLayer) { map.removeLayer(buildingsLayer); buildingsLayer = null; document.getElementById("buildings-hint").style.display = "none"; }
+});
+map.on("moveend", () => { clearTimeout(buildingsFetchTimer); buildingsFetchTimer = setTimeout(loadBuildingsInView, 400); });
+
+// ---------- Recherche d'adresse ----------
+const input = document.getElementById("address-input");
+const suggestions = document.getElementById("address-suggestions");
+let debounceTimer = null;
+input.addEventListener("input", () => {
+  clearTimeout(debounceTimer);
+  const q = input.value.trim();
+  if (q.length < 4) { suggestions.style.display = "none"; return; }
+  debounceTimer = setTimeout(() => fetchSuggestions(q), 300);
+});
+function fetchSuggestions(q) {
+  fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&citycode=79191&limit=5`)
+    .then(r => r.json()).then(d => {
+      suggestions.innerHTML = "";
+      (d.features || []).forEach(f => {
+        const div = document.createElement("div");
+        div.textContent = f.properties.label;
+        div.addEventListener("click", () => {
+          input.value = f.properties.label;
+          suggestions.style.display = "none";
+          analyseAddress(f.properties.label, f.geometry.coordinates[1], f.geometry.coordinates[0]);
+        });
+        suggestions.appendChild(div);
+      });
+      suggestions.style.display = d.features && d.features.length ? "block" : "none";
+    }).catch(() => { suggestions.style.display = "none"; });
+}
+document.getElementById("search-btn").addEventListener("click", () => {
+  const q = input.value.trim();
+  if (!q) return;
+  fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&citycode=79191&limit=1`)
+    .then(r => r.json()).then(d => {
+      if (d.features && d.features.length) {
+        const f = d.features[0];
+        analyseAddress(f.properties.label, f.geometry.coordinates[1], f.geometry.coordinates[0]);
+      }
+    });
+});
+
+// ---------- Solutions cles en main ----------
+function buildSolutions(props, nearbyEhpad) {
+  const solutions = [];
+  const bur = props.bur || 0, ver = props.ver || 0, lcz = props.lcz_int;
+  const lowVeg = ver < 15;
+  const denseBuiltLowRise = [6,8,9].includes(lcz);
+
+  let needsAmenagement = false;
+
+  if (denseBuiltLowRise && lowVeg) {
+    solutions.push({
+      tag: "amenagement", tagLabel: "Amenagement", icon: "ti-sun-off",
+      title: "Ombrage de voirie",
+      text: "Bati bas, peu d'arbres a proximite : voiles pare-soleil ou structures vegetalisees adaptees aux rues et espaces publics.",
+      link: "https://www.cerema.fr/fr/actualites/adapter-voirie-urbaine-au-changement-climatique-cerema",
+      linkLabel: "Recueil de solutions, Cerema",
+    });
+    needsAmenagement = true;
+  }
+  if (bur > 40 || lowVeg) {
+    solutions.push({
+      tag: "amenagement", tagLabel: "Amenagement", icon: "ti-plant-2",
+      title: "Vegetalisation et desimpermeabilisation",
+      text: bur > 40
+        ? "Taux de surface batie eleve, peu de sol permeable : retours d'experience sur des amenagements comparables."
+        : "Faible couvert vegetal mesure sur cet ilot : especes adaptees, couts et delais de mise en oeuvre.",
+      link: "https://agirpourlatransition.ademe.fr/collectivites/conseils/adaptation/vegetalisation",
+      linkLabel: "Plus fraiche ma ville, ADEME",
+    });
+    needsAmenagement = true;
+  }
+  if ((props.pct_65plus_est != null && props.pct_65plus_est > 20) || nearbyEhpad) {
+    solutions.push({
+      tag: "social", tagLabel: "Accompagnement social", icon: "ti-heart-handshake",
+      title: "Registre communal des personnes vulnerables",
+      text: "Part de personnes agees elevee a proximite : obligation legale du maire, permet un contact prioritaire en cas d'alerte canicule.",
+      link: "https://www.service-public.gouv.fr/demarches-silence-vaut-accord/demarches/1635",
+      linkLabel: "Demarche officielle, Service-Public.fr",
+    });
+  }
+  if (needsAmenagement) {
+    solutions.push({
+      tag: "financement", tagLabel: "Financement", icon: "ti-coin",
+      title: "Fonds vert, mesure renaturation",
+      text: "Finance a la fois les diagnostics d'ilots de chaleur et les travaux de vegetalisation ou de desimpermeabilisation.",
+      link: "https://aides-territoires.beta.gouv.fr/aides/a086-financer-des-solutions-dadaptation-au-changem/",
+      linkLabel: "Fiche aide, Aides-territoires",
+    });
+  }
+  return solutions;
+}
+
+// ---------- Rendu du panneau diagnostic ----------
+function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyEhpad }) {
+  document.getElementById("diagnostic-panel").style.display = "block";
+  document.getElementById("diag-address").textContent = label;
+
+  const badge = document.getElementById("diag-badge");
+  const badgeMap = { zone: "Ilot", ecole: "Ecole primaire", ehpad: "EHPAD", creche: "Creche", address: "Adresse recherchee", batiment: "Batiment" };
+  badge.textContent = badgeMap[badgeType] || "";
+  badge.className = "badge " + badgeType;
+
+  const indice = zoneProps ? zoneProps.indice_chaleur : null;
+  const albVal = albedo != null ? albedo : (zoneProps ? zoneProps.alb_mean : null);
+
+  if (indice != null) {
+    const pct = percentileRank("indice_chaleur", indice);
+    document.getElementById("diag-indice").textContent = indice.toFixed(2);
+    document.getElementById("diag-indice-fill").style.width = pct + "%";
+    document.getElementById("diag-indice-fill").style.background = colorForFraction(pct/100);
+    document.getElementById("diag-indice-context").textContent = `Plus eleve que ${Math.round(pct)}% des ilots de Niort`;
+  } else {
+    document.getElementById("diag-indice").textContent = "-";
+    document.getElementById("diag-indice-fill").style.width = "0%";
+    document.getElementById("diag-indice-context").textContent = "Non disponible a cet endroit";
+  }
+
+  if (albVal != null) {
+    const pctA = percentileRank("albedo", albVal);
+    document.getElementById("diag-albedo").textContent = albVal.toFixed(2);
+    document.getElementById("diag-albedo-fill").style.width = pctA + "%";
+    document.getElementById("diag-albedo-fill").style.background = colorForFraction(1-pctA/100);
+    document.getElementById("diag-albedo-context").textContent = `Plus sombre que ${Math.round(100-pctA)}% des surfaces`;
+  } else {
+    document.getElementById("diag-albedo").textContent = "-";
+    document.getElementById("diag-albedo-fill").style.width = "0%";
+    document.getElementById("diag-albedo-context").textContent = "Non disponible a cet endroit";
+  }
+
+  const hasDemo = zoneProps && zoneProps.is_priority === 1 && zoneProps.population_est != null;
+  document.getElementById("context-pop").style.display = hasDemo ? "flex" : "none";
+  document.getElementById("card-pauvrete").style.display = hasDemo ? "block" : "none";
+  document.getElementById("card-age").style.display = hasDemo ? "block" : "none";
+  document.getElementById("diag-no-demo").style.display = (zoneProps && !hasDemo) ? "block" : "none";
+
+  if (hasDemo) {
+    document.getElementById("diag-population").textContent = `~ ${Math.round(zoneProps.population_est)} habitants`;
+    const pauvrete = zoneProps.taux_pauvrete_est;
+    document.getElementById("diag-pauvrete").textContent = pauvrete != null ? pauvrete.toFixed(0) + "%" : "-";
+    document.getElementById("diag-pauvrete-fill").style.width = pauvrete != null ? Math.min(pauvrete*1.4,100) + "%" : "0%";
+    document.getElementById("diag-pauvrete-fill").style.background = "#d7191c";
+    document.getElementById("diag-pauvrete-context").textContent = pauvrete != null ? "Contre 8.9% en moyenne hors zones prioritaires" : "";
+
+    const age = zoneProps.pct_65plus_est;
+    document.getElementById("diag-age").textContent = age != null ? `${Math.round(zoneProps.pop_65plus_est)} pers.` : "-";
+    document.getElementById("diag-age-fill").style.width = age != null ? Math.min(age*2,100) + "%" : "0%";
+    document.getElementById("diag-age-fill").style.background = "#378ADD";
+    document.getElementById("diag-age-context").textContent = age != null ? `Soit ${age.toFixed(0)}% de la population de l'ilot` : "";
+  }
+
+  const vegRow = document.getElementById("context-veg");
+  if (veg100 != null) {
+    vegRow.style.display = "flex";
+    document.getElementById("diag-veg100").textContent = Math.round(veg100) + "% de couvert vegetal";
+  } else {
+    vegRow.style.display = "none";
+  }
+
+  const solutionsSection = document.getElementById("solutions-section");
+  const solutionsList = document.getElementById("solutions-list");
+  if (zoneProps) {
+    const solutions = buildSolutions(zoneProps, nearbyEhpad);
+    if (solutions.length) {
+      solutionsSection.style.display = "block";
+      solutionsList.innerHTML = solutions.map(s => `
+        <div class="solution-card">
+          <span class="solution-tag ${s.tag}">${s.tagLabel}</span>
+          <p class="solution-title"><i class="ti ${s.icon}"></i> ${s.title}</p>
+          <p class="solution-text">${s.text}</p>
+          <a class="solution-link" href="${s.link}" target="_blank" rel="noopener">${s.linkLabel} <i class="ti ti-external-link"></i></a>
+        </div>
+      `).join("");
+    } else {
+      solutionsSection.style.display = "none";
+    }
+  } else {
+    solutionsSection.style.display = "none";
+  }
+}
+
+function isNearEhpad(lat, lon, radiusMeters) {
+  return allEtablissements.ehpad.some(f => {
+    const [elon, elat] = f.geometry.coordinates;
+    const d = haversine(lat, lon, elat, elon);
+    return d < radiusMeters;
+  });
+}
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function analyseZone(feature) {
+  const p = feature.properties;
+  const center = polygonCenter(feature.geometry.coordinates);
+  if (searchMarker) map.removeLayer(searchMarker);
+  searchMarker = L.marker([center.lat, center.lon]).addTo(map);
+  const veg100 = sampleVegetationBuffer(center.lat, center.lon, 100);
+  renderDiagnostic({
+    label: `Ilot LCZ ${p.lcz_int}`,
+    badgeType: "zone", zoneProps: p, albedo: null, veg100,
+    nearbyEhpad: isNearEhpad(center.lat, center.lon, 300),
+  });
+}
+
+function analyseEtablissement(feature, type) {
+  const [lon, lat] = feature.geometry.coordinates;
+  if (searchMarker) map.removeLayer(searchMarker);
+  searchMarker = L.marker([lat, lon]).addTo(map);
+  map.setView([lat, lon], Math.max(map.getZoom(), 15));
+  const zone = findZoneAt(lat, lon);
+  const veg100 = sampleVegetationBuffer(lat, lon, 100);
+  renderDiagnostic({
+    label: feature.properties.nom_norm || type,
+    badgeType: type, zoneProps: zone ? zone.properties : null, albedo: null, veg100,
+    nearbyEhpad: type === "ehpad" ? true : isNearEhpad(lat, lon, 300),
+  });
+}
+
+function analyseBuilding(feature) {
+  const center = feature.properties._center;
+  if (searchMarker) map.removeLayer(searchMarker);
+  searchMarker = L.marker([center.lat, center.lon]).addTo(map);
+  const zone = findZoneAt(center.lat, center.lon);
+  const veg100 = sampleVegetationBuffer(center.lat, center.lon, 100);
+  const usage = feature.properties.usage_1 || feature.properties.nature || "Batiment";
+  renderDiagnostic({
+    label: usage, badgeType: "batiment", zoneProps: zone ? zone.properties : null,
+    albedo: feature.properties._albedo, veg100,
+    nearbyEhpad: isNearEhpad(center.lat, center.lon, 300),
+  });
+}
+
+function analyseAddress(label, lat, lon) {
+  if (searchMarker) map.removeLayer(searchMarker);
+  searchMarker = L.marker([lat, lon]).addTo(map);
+  map.setView([lat, lon], 16);
+  const zone = findZoneAt(lat, lon);
+  const albedo = sampleRaster("albedo", lat, lon, 10000);
+  const veg100 = sampleVegetationBuffer(lat, lon, 100);
+  renderDiagnostic({
+    label, badgeType: "address", zoneProps: zone ? zone.properties : null, albedo, veg100,
+    nearbyEhpad: isNearEhpad(lat, lon, 300),
+  });
+}

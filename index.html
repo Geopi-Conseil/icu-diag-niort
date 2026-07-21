@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICU DIAG Niort, diagnostic de vulnerabilite thermique</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header id="topbar">
+  <div id="brand">
+    <h1>ICU DIAG beta Niort</h1>
+    <p>Identifier les secteurs les plus exposes et les plus vulnerables aux effets d'ilot de chaleur urbain. <a href="https://github.com/Geopi-Conseil/icu-diag-niort/blob/main/README.md" target="_blank">Methodologie du projet</a></p>
+  </div>
+  <div id="search-box">
+    <input type="text" id="address-input" placeholder="Rechercher une adresse a Niort..." autocomplete="off" />
+    <button id="search-btn">Analyser</button>
+    <div id="address-suggestions"></div>
+  </div>
+</header>
+
+<div id="app">
+  <aside id="sidebar">
+
+    <div class="panel">
+      <p class="panel-intro">ICU DIAG permet d'identifier les secteurs urbains les plus exposes et les plus vulnerables aux effets d'ilot de chaleur urbain. Recherchez une adresse ou cliquez sur un ilot, un batiment ou un etablissement de la carte pour obtenir un diagnostic.</p>
+    </div>
+
+    <div class="panel">
+      <label class="checkbox-row"><input type="checkbox" id="layer-albedo" /> Albedo de surface</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-vegetation" /> Couvert vegetal</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-lst" /> Temperature de surface (ete)</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-buildings" /> Batiments (zoom rue)</label>
+      <p id="buildings-hint" class="hint-text" style="display:none;">Zoomez davantage pour voir les batiments.</p>
+    </div>
+
+    <div class="panel">
+      <label class="checkbox-row"><input type="checkbox" id="layer-ecoles" checked /> <span class="dot ecole"></span> Ecoles primaires</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-ehpad" checked /> <span class="dot ehpad"></span> EHPAD</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-creches" checked /> <span class="dot creche"></span> Creches</label>
+    </div>
+
+    <div class="panel" id="diagnostic-panel" style="display:none;">
+      <div id="diag-header">
+        <span id="diag-badge" class="badge"></span>
+      </div>
+      <p id="diag-address">-</p>
+
+      <div class="context-row" id="context-pop">
+        <i class="ti ti-users"></i>
+        <div>
+          <p class="context-value" id="diag-population">-</p>
+          <p class="context-label">habitants estimes dans cet ilot</p>
+        </div>
+      </div>
+
+      <div class="context-row veg" id="context-veg">
+        <i class="ti ti-tree"></i>
+        <div>
+          <p class="context-value" id="diag-veg100">-</p>
+          <p class="context-label">de couvert vegetal dans un rayon de 100m</p>
+        </div>
+      </div>
+
+      <div class="indicator-card">
+        <div class="indicator-top">
+          <span>Indice de chaleur cumulative</span>
+          <span class="indicator-value" id="diag-indice">-</span>
+        </div>
+        <div class="indicator-bar"><div class="indicator-fill" id="diag-indice-fill"></div></div>
+        <p class="indicator-context" id="diag-indice-context">-</p>
+      </div>
+
+      <div class="indicator-card">
+        <div class="indicator-top">
+          <span>Albedo (reflectivite)</span>
+          <span class="indicator-value" id="diag-albedo">-</span>
+        </div>
+        <div class="indicator-bar"><div class="indicator-fill" id="diag-albedo-fill"></div></div>
+        <p class="indicator-context" id="diag-albedo-context">-</p>
+      </div>
+
+      <div class="indicator-card" id="card-pauvrete" style="display:none;">
+        <div class="indicator-top">
+          <span>Taux de pauvrete de l'ilot</span>
+          <span class="indicator-value" id="diag-pauvrete">-</span>
+        </div>
+        <div class="indicator-bar"><div class="indicator-fill" id="diag-pauvrete-fill"></div></div>
+        <p class="indicator-context" id="diag-pauvrete-context">-</p>
+      </div>
+
+      <div class="indicator-card" id="card-age" style="display:none;">
+        <div class="indicator-top">
+          <span>65 ans et plus</span>
+          <span class="indicator-value" id="diag-age">-</span>
+        </div>
+        <div class="indicator-bar"><div class="indicator-fill" id="diag-age-fill"></div></div>
+        <p class="indicator-context" id="diag-age-context">-</p>
+      </div>
+
+      <p id="diag-no-demo" class="hint-text" style="display:none;">Donnees demographiques disponibles uniquement pour les ilots du dernier quartile.</p>
+
+      <div id="solutions-section" style="display:none;">
+        <p class="section-title">Solutions cles en main</p>
+        <p class="section-subtitle">Selectionnees selon le profil de cet ilot</p>
+        <div id="solutions-list"></div>
+      </div>
+
+    </div>
+
+    <div class="panel" id="legend-panel">
+      <p class="section-title">Legende</p>
+      <div id="legend-gradient"></div>
+      <div id="legend-labels"><span>Faible</span><span>Indice de chaleur</span><span>Eleve</span></div>
+      <div class="legend-points">
+        <div><span class="dot-ring"></span> Dernier quartile (le plus a risque)</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <main id="map"></main>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
