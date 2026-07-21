@@ -457,12 +457,19 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
 
   const indice = zoneProps ? zoneProps.indice_chaleur : null;
   const albVal = albedo != null ? albedo : (zoneProps ? zoneProps.alb_mean : null);
+  const INDICE_RANGE = [0.18, 0.80];
+  const ALBEDO_RANGE = [0.15, 0.40];
+
+  function fillBar(fillId, value, range, ramp) {
+    const frac = Math.max(0, Math.min(1, (value - range[0]) / (range[1] - range[0])));
+    document.getElementById(fillId).style.width = (frac * 100) + "%";
+    document.getElementById(fillId).style.background = colorForFraction(frac, ramp);
+  }
 
   if (indice != null) {
     const pct = percentileRank("indice_chaleur", indice);
     document.getElementById("diag-indice").textContent = indice.toFixed(2);
-    document.getElementById("diag-indice-fill").style.width = pct + "%";
-    document.getElementById("diag-indice-fill").style.background = colorForFraction(pct/100);
+    fillBar("diag-indice-fill", indice, INDICE_RANGE);
     document.getElementById("diag-indice-context").textContent = `Plus eleve que ${Math.round(pct)}% des ilots de Niort`;
   } else {
     document.getElementById("diag-indice").textContent = "-";
@@ -473,9 +480,8 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
   if (albVal != null) {
     const pctA = percentileRank("albedo", albVal);
     document.getElementById("diag-albedo").textContent = albVal.toFixed(2);
-    document.getElementById("diag-albedo-fill").style.width = pctA + "%";
-    document.getElementById("diag-albedo-fill").style.background = colorForFraction(1-pctA/100);
-    document.getElementById("diag-albedo-context").textContent = `Plus sombre que ${Math.round(100-pctA)}% des surfaces`;
+    fillBar("diag-albedo-fill", albVal, ALBEDO_RANGE, HOT_STOPS.albedo);
+    document.getElementById("diag-albedo-context").textContent = `Plus sombre que ${Math.round(100 - pctA)}% des surfaces`;
   } else {
     document.getElementById("diag-albedo").textContent = "-";
     document.getElementById("diag-albedo-fill").style.width = "0%";
@@ -492,14 +498,16 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
     document.getElementById("diag-population").textContent = `~ ${Math.round(zoneProps.population_est)} habitants`;
     const pauvrete = zoneProps.taux_pauvrete_est;
     document.getElementById("diag-pauvrete").textContent = pauvrete != null ? pauvrete.toFixed(0) + "%" : "-";
-    document.getElementById("diag-pauvrete-fill").style.width = pauvrete != null ? Math.min(pauvrete*1.4,100) + "%" : "0%";
-    document.getElementById("diag-pauvrete-fill").style.background = "#d7191c";
+    if (pauvrete != null) fillBar("diag-pauvrete-fill", pauvrete, demoStats.pauvrete);
+    else document.getElementById("diag-pauvrete-fill").style.width = "0%";
+    document.getElementById("scale-pauvrete").innerHTML = `<span>${demoStats.pauvrete[0].toFixed(0)}%</span><span>${demoStats.pauvrete[1].toFixed(0)}%</span>`;
     document.getElementById("diag-pauvrete-context").textContent = pauvrete != null ? "Contre 8.9% en moyenne hors zones prioritaires" : "";
 
     const age = zoneProps.pct_65plus_est;
     document.getElementById("diag-age").textContent = age != null ? `${Math.round(zoneProps.pop_65plus_est)} pers.` : "-";
-    document.getElementById("diag-age-fill").style.width = age != null ? Math.min(age*2,100) + "%" : "0%";
-    document.getElementById("diag-age-fill").style.background = "#378ADD";
+    if (age != null) fillBar("diag-age-fill", age, demoStats.age);
+    else document.getElementById("diag-age-fill").style.width = "0%";
+    document.getElementById("scale-age").innerHTML = `<span>${demoStats.age[0].toFixed(0)}%</span><span>${demoStats.age[1].toFixed(0)}%</span>`;
     document.getElementById("diag-age-context").textContent = age != null ? `Soit ${age.toFixed(0)}% de la population de l'ilot` : "";
   }
 
