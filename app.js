@@ -60,6 +60,7 @@ Promise.all([
   map.fitBounds(boundaryLayer.getBounds(), { padding: [10,10] });
 
   computeDemoStats();
+  updateDemoLegendLabels();
   loadZones();
   refreshEtablissements();
 });
@@ -374,9 +375,10 @@ document.getElementById("search-btn").addEventListener("click", () => {
 // ---------- Solutions cles en main ----------
 function buildSolutions(props, nearbyEhpad) {
   const solutions = [];
-  const bur = props.bur || 0, ver = props.ver || 0, lcz = props.lcz_int;
+  const bur = props.bur || 0, ver = props.ver || 0, lcz = props.lcz_int, alb = props.alb_mean;
   const lowVeg = ver < 15;
   const denseBuiltLowRise = [6,8,9].includes(lcz);
+  const darkSurface = alb != null && alb < 0.25;
 
   let needsAmenagement = false;
 
@@ -402,6 +404,16 @@ function buildSolutions(props, nearbyEhpad) {
     });
     needsAmenagement = true;
   }
+  if (darkSurface) {
+    solutions.push({
+      tag: "amenagement", tagLabel: "Amenagement", icon: "ti-brightness-up",
+      title: "Revetements a albedo eleve",
+      text: `Albedo mesure de ${alb.toFixed(2)}, parmi les plus sombres de la commune : peintures ou revetements reflechissants pour toitures et chaussees.`,
+      link: "https://plusfraichemaville.fr/fiche-solution/revetement-albedo-eleve",
+      linkLabel: "Fiche solution, ADEME",
+    });
+    needsAmenagement = true;
+  }
   if ((props.pct_65plus_est != null && props.pct_65plus_est > 20) || nearbyEhpad) {
     solutions.push({
       tag: "social", tagLabel: "Accompagnement social", icon: "ti-heart-handshake",
@@ -411,11 +423,20 @@ function buildSolutions(props, nearbyEhpad) {
       linkLabel: "Demarche officielle, Service-Public.fr",
     });
   }
+  if (nearbyEhpad) {
+    solutions.push({
+      tag: "social", tagLabel: "Accompagnement social", icon: "ti-building-hospital",
+      title: "Piece rafraichie en EHPAD",
+      text: "Un EHPAD a proximite : chaque etablissement doit legalement disposer d'un local rafraichi accessible aux residents en cas de forte chaleur.",
+      link: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032610131",
+      linkLabel: "Article D312-161, Legifrance",
+    });
+  }
   if (needsAmenagement) {
     solutions.push({
       tag: "financement", tagLabel: "Financement", icon: "ti-coin",
       title: "Fonds vert, mesure renaturation",
-      text: "Finance a la fois les diagnostics d'ilots de chaleur et les travaux de vegetalisation ou de desimpermeabilisation.",
+      text: "Finance a la fois les diagnostics d'ilots de chaleur et les travaux de vegetalisation, desimpermeabilisation ou revetements reflechissants.",
       link: "https://aides-territoires.beta.gouv.fr/aides/a086-financer-des-solutions-dadaptation-au-changem/",
       linkLabel: "Fiche aide, Aides-territoires",
     });
@@ -578,4 +599,35 @@ function analyseAddress(label, lat, lon) {
     label, badgeType: "address", zoneProps: zone ? zone.properties : null, albedo, veg100,
     nearbyEhpad: isNearEhpad(lat, lon, 300),
   });
+}
+
+// ---------- Legendes depliables : chaque case a cocher revele sa legende ----------
+const LEGEND_MAP = {
+  "mode-indice": "legend-indice",
+  "mode-priority": "legend-priority",
+  "layer-albedo": "legend-albedo",
+  "layer-lst": "legend-lst",
+  "layer-vegetation": "legend-vegetation",
+  "layer-buildings": "legend-buildings",
+  "mode-population": "legend-population",
+  "mode-pauvrete": "legend-pauvrete",
+  "mode-age": "legend-age",
+  "layer-etablissements": "legend-etablissements",
+};
+Object.entries(LEGEND_MAP).forEach(([checkboxId, legendId]) => {
+  const checkbox = document.getElementById(checkboxId);
+  const legend = document.getElementById(legendId);
+  checkbox.addEventListener("change", () => {
+    legend.classList.toggle("open", checkbox.checked);
+  });
+});
+
+// ---------- Valeurs dynamiques des legendes socio-demographiques ----------
+function updateDemoLegendLabels() {
+  document.getElementById("labels-population").innerHTML =
+    `<span>${Math.round(demoStats.population[0])} hab.</span><span>${Math.round(demoStats.population[1])} hab.</span>`;
+  document.getElementById("labels-pauvrete").innerHTML =
+    `<span>${demoStats.pauvrete[0].toFixed(0)}%</span><span>${demoStats.pauvrete[1].toFixed(0)}%</span>`;
+  document.getElementById("labels-age").innerHTML =
+    `<span>${demoStats.age[0].toFixed(0)}%</span><span>${demoStats.age[1].toFixed(0)}%</span>`;
 }

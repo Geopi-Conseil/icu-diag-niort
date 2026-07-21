@@ -15,15 +15,18 @@
     <h1>ICU DIAG beta Niort</h1>
     <p>Identifier les secteurs les plus exposes et les plus vulnerables aux effets d'ilot de chaleur urbain. <a href="https://github.com/Geopi-Conseil/icu-diag-niort/blob/main/README.md" target="_blank">Methodologie du projet</a></p>
   </div>
-  <div id="search-box">
-    <input type="text" id="address-input" placeholder="Rechercher une adresse a Niort..." autocomplete="off" />
-    <button id="search-btn">Analyser</button>
-    <div id="address-suggestions"></div>
-  </div>
 </header>
 
 <div id="app">
   <aside id="sidebar">
+
+    <div class="panel" id="search-panel">
+      <div id="search-box">
+        <input type="text" id="address-input" placeholder="Rechercher une adresse a Niort..." autocomplete="off" />
+        <button id="search-btn">Analyser</button>
+        <div id="address-suggestions"></div>
+      </div>
+    </div>
 
     <div class="panel">
       <p class="panel-intro">ICU DIAG permet d'identifier les secteurs urbains les plus exposes et les plus vulnerables aux effets d'ilot de chaleur urbain. Recherchez une adresse ou cliquez sur un ilot, un batiment ou un etablissement de la carte pour obtenir un diagnostic.</p>
@@ -107,31 +110,82 @@
         <input type="checkbox" id="mode-indice" checked />
         <span>Indice de chaleur cumulative</span>
       </label>
-      <div class="mini-gradient" id="grad-indice"></div>
+      <div class="indicator-legend open" id="legend-indice">
+        <div class="mini-gradient" id="grad-indice"></div>
+        <div class="mini-labels"><span>0.18 (frais)</span><span>0.80 (chaud)</span></div>
+        <p class="legend-note">Combine morphologie urbaine, albedo et temperature de surface, sur les 1721 ilots LCZ de la commune.</p>
+      </div>
 
       <label class="checkbox-row layer-row">
         <input type="checkbox" id="mode-priority" />
         <span>Ilots les plus exposes a l'indice</span>
       </label>
-      <div class="mini-gradient" id="grad-priority"></div>
+      <div class="indicator-legend" id="legend-priority">
+        <div class="swatch-row">
+          <span class="swatch-demo"></span>
+          <span class="legend-note">Contour rouge : dernier quartile de l'indice (25% des ilots les plus a risque)</span>
+        </div>
+      </div>
     </div>
 
     <div class="panel">
       <p class="section-title">Indicateurs physiques</p>
+
       <label class="checkbox-row"><input type="checkbox" id="layer-albedo" /> Albedo de surface</label>
+      <div class="indicator-legend" id="legend-albedo">
+        <div class="mini-gradient" id="grad-albedo"></div>
+        <div class="mini-labels"><span>0.15 (sombre)</span><span>0.40 (clair)</span></div>
+      </div>
+
       <label class="checkbox-row"><input type="checkbox" id="layer-lst" /> Temperatures de surface</label>
+      <div class="indicator-legend" id="legend-lst">
+        <div class="mini-gradient" id="grad-lst"></div>
+        <div class="mini-labels"><span>28 degC</span><span>53 degC</span></div>
+        <p class="legend-note">Composite estival, moyenne de 21 scenes Landsat 2021-2025.</p>
+      </div>
+
       <label class="checkbox-row"><input type="checkbox" id="layer-vegetation" /> Couvert vegetal</label>
+      <div class="indicator-legend" id="legend-vegetation">
+        <div class="mini-gradient" id="grad-vegetation"></div>
+        <div class="mini-labels"><span>0 m</span><span>42 m (hauteur de canopee)</span></div>
+      </div>
+
       <label class="checkbox-row"><input type="checkbox" id="layer-buildings" /> Batiments</label>
+      <div class="indicator-legend" id="legend-buildings">
+        <p class="legend-note">Chaque batiment est colore selon son albedo de toiture (meme echelle que ci-dessus).</p>
+      </div>
       <p id="buildings-hint" class="hint-text" style="display:none;">Zoomez davantage pour voir les batiments.</p>
     </div>
 
     <div class="panel">
       <p class="section-title">Indicateurs socio-demographiques</p>
+
       <label class="checkbox-row"><input type="checkbox" id="mode-population" /> Population</label>
+      <div class="indicator-legend" id="legend-population">
+        <div class="mini-gradient" id="grad-population"></div>
+        <div class="mini-labels" id="labels-population"><span>-</span><span>-</span></div>
+      </div>
+
       <label class="checkbox-row"><input type="checkbox" id="mode-pauvrete" /> Pauvrete</label>
+      <div class="indicator-legend" id="legend-pauvrete">
+        <div class="mini-gradient" id="grad-pauvrete"></div>
+        <div class="mini-labels" id="labels-pauvrete"><span>-</span><span>-</span></div>
+      </div>
+
       <label class="checkbox-row"><input type="checkbox" id="mode-age" /> 65 ans et plus</label>
-      <label class="checkbox-row"><input type="checkbox" id="layer-etablissements" checked /> Etablissements vulnerables</label>
-      <p class="hint-text" id="demo-hint">Disponible uniquement sur les ilots du dernier quartile.</p>
+      <div class="indicator-legend" id="legend-age">
+        <div class="mini-gradient" id="grad-age"></div>
+        <div class="mini-labels" id="labels-age"><span>-</span><span>-</span></div>
+      </div>
+
+      <label class="checkbox-row"><input type="checkbox" id="layer-etablissements" /> Etablissements vulnerables</label>
+      <div class="indicator-legend" id="legend-etablissements">
+        <div class="swatch-row"><span class="dot ecole"></span> <span class="legend-note">Ecole primaire</span></div>
+        <div class="swatch-row"><span class="dot ehpad"></span> <span class="legend-note">EHPAD</span></div>
+        <div class="swatch-row"><span class="dot creche"></span> <span class="legend-note">Creche</span></div>
+      </div>
+
+      <p class="hint-text" id="demo-hint">Population, pauvrete et age : disponibles uniquement sur les ilots du dernier quartile.</p>
     </div>
 
   </aside>
