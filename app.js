@@ -384,14 +384,16 @@ document.getElementById("search-btn").addEventListener("click", () => {
 });
 
 // ---------- Solutions clés en main ----------
-function buildSolutions(props, nearbyEhpad, nearbyEcole) {
+function buildSolutions(props, nearbyEhpad, nearbyEcole, nearbyCreche) {
   const solutions = [];
   const bur = props.bur || 0, ver = props.ver || 0, lcz = props.lcz_int, alb = props.alb_mean;
   const lowVeg = ver < 15;
   const denseBuiltLowRise = [6,8,9].includes(lcz);
   const darkSurface = alb != null && alb < 0.25;
+  const highBur = bur > 40;
 
   let needsAmenagement = false;
+  let needsEauxPluviales = false;
 
   if (nearbyEcole) {
     solutions.push({
@@ -415,7 +417,7 @@ function buildSolutions(props, nearbyEhpad, nearbyEcole) {
     });
     needsAmenagement = true;
   }
-  if (bur > 40) {
+  if (highBur) {
     solutions.push({
       tag: "amenagement", tagLabel: "Aménagement", icon: "ti-droplet",
       title: "Revêtement drainant / perméable",
@@ -425,6 +427,7 @@ function buildSolutions(props, nearbyEhpad, nearbyEcole) {
       linkLabel: "Fiche solution, ADEME",
     });
     needsAmenagement = true;
+    needsEauxPluviales = true;
   }
   if (darkSurface) {
     solutions.push({
@@ -447,13 +450,22 @@ function buildSolutions(props, nearbyEhpad, nearbyEcole) {
       linkLabel: "Fiche solution, ADEME",
     });
   }
-  if ((props.pct_65plus_est != null && props.pct_65plus_est > 20) || nearbyEhpad) {
+
+  const vulnerableAge = (props.pct_65plus_est != null && props.pct_65plus_est > 20) || nearbyEhpad;
+  if (vulnerableAge) {
     solutions.push({
       tag: "social", tagLabel: "Accompagnement social", icon: "ti-heart-handshake",
       title: "Registre communal des personnes vulnérables",
       text: "Part de personnes âgées élevée à proximité : obligation légale du maire, permet un contact prioritaire en cas d'alerte canicule.",
       link: "https://www.service-public.gouv.fr/demarches-silence-vaut-accord/demarches/1635",
       linkLabel: "Démarche officielle, Service-Public.fr",
+    });
+    solutions.push({
+      tag: "social", tagLabel: "Accompagnement social", icon: "ti-building-community",
+      title: "Salle rafraîchie municipale ouverte au public",
+      text: "En vigilance canicule, les communes ouvrent des espaces frais accessibles gratuitement à tous (mairie, médiathèque, gymnase, CCAS), en plus du suivi individuel des personnes inscrites au registre.",
+      link: "https://www.amf.asso.fr/documents-canicule-ce-que-doivent-faire-les-maires/39516",
+      linkLabel: "Guide du maire, AMF",
     });
   }
   if (nearbyEhpad) {
@@ -465,6 +477,15 @@ function buildSolutions(props, nearbyEhpad, nearbyEcole) {
       linkLabel: "Article D312-161, Légifrance",
     });
   }
+  if (nearbyCreche) {
+    solutions.push({
+      tag: "social", tagLabel: "Accompagnement social", icon: "ti-baby-carriage",
+      title: "Pièce rafraîchie en crèche",
+      text: "Une crèche à proximité : le maire doit s'assurer de la présence d'une pièce rafraîchie dans chaque lieu d'accueil de la petite enfance dont il a la responsabilité.",
+      link: "https://www.amf.asso.fr/documents-canicule-ce-que-doivent-faire-les-maires/39516",
+      linkLabel: "Guide du maire, AMF",
+    });
+  }
   if (needsAmenagement) {
     solutions.push({
       tag: "financement", tagLabel: "Financement", icon: "ti-coin",
@@ -474,11 +495,20 @@ function buildSolutions(props, nearbyEhpad, nearbyEcole) {
       linkLabel: "Fiche aide, Aides-territoires",
     });
   }
+  if (needsEauxPluviales) {
+    solutions.push({
+      tag: "financement", tagLabel: "Financement", icon: "ti-droplet-dollar",
+      title: "Agences de l'eau",
+      text: "Subventionnent spécifiquement les travaux de désimperméabilisation et de gestion à la source des eaux pluviales, souvent cumulables avec le Fonds vert.",
+      link: "https://aides-territoires.beta.gouv.fr/aides/0605-favoriser-une-politique-de-gestion-integree-d/",
+      linkLabel: "Fiche aide, Aides-territoires",
+    });
+  }
   return solutions;
 }
 
 // ---------- Rendu du panneau diagnostic ----------
-function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyEhpad, nearbyEcole }) {
+function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyEhpad, nearbyEcole, nearbyCreche }) {
   document.getElementById("diag-empty").style.display = "none";
   document.getElementById("diag-content").style.display = "block";
   document.getElementById("diag-address").textContent = label;
@@ -487,6 +517,7 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
   const badgeMap = { zone: "Îlot", ecole: "École primaire", ehpad: "EHPAD", creche: "Crèche", address: "Adresse recherchée", batiment: "Bâtiment" };
   badge.textContent = badgeMap[badgeType] || "";
   badge.className = "badge " + badgeType;
+  document.getElementById("diag-lcz-note").style.display = badgeType === "zone" ? "block" : "none";
 
   const indice = zoneProps ? zoneProps.indice_chaleur : null;
   const albVal = albedo != null ? albedo : (zoneProps ? zoneProps.alb_mean : null);
@@ -555,7 +586,7 @@ function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyE
   const solutionsSection = document.getElementById("solutions-section");
   const solutionsList = document.getElementById("solutions-list");
   if (zoneProps) {
-    const solutions = buildSolutions(zoneProps, nearbyEhpad, nearbyEcole);
+    const solutions = buildSolutions(zoneProps, nearbyEhpad, nearbyEcole, nearbyCreche);
     if (solutions.length) {
       solutionsSection.style.display = "block";
       solutionsList.innerHTML = solutions.map(s => `
@@ -593,6 +624,13 @@ function isNearEcole(lat, lon, radiusMeters) {
     return d < radiusMeters;
   });
 }
+function isNearCreche(lat, lon, radiusMeters) {
+  return allEtablissements.creches.some(f => {
+    const [elon, elat] = f.geometry.coordinates;
+    const d = haversine(lat, lon, elat, elon);
+    return d < radiusMeters;
+  });
+}
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
@@ -611,6 +649,7 @@ function analyseZone(feature) {
     badgeType: "zone", zoneProps: p, albedo: null, veg100,
     nearbyEhpad: isNearEhpad(center.lat, center.lon, 300),
     nearbyEcole: isNearEcole(center.lat, center.lon, 300),
+    nearbyCreche: isNearCreche(center.lat, center.lon, 300),
   });
 }
 
@@ -626,6 +665,7 @@ function analyseEtablissement(feature, type) {
     badgeType: type, zoneProps: zone ? zone.properties : null, albedo: null, veg100,
     nearbyEhpad: type === "ehpad" ? true : isNearEhpad(lat, lon, 300),
     nearbyEcole: type === "ecole" ? true : isNearEcole(lat, lon, 300),
+    nearbyCreche: type === "creche" ? true : isNearCreche(lat, lon, 300),
   });
 }
 
@@ -641,6 +681,7 @@ function analyseBuilding(feature) {
     albedo: feature.properties._albedo, veg100,
     nearbyEhpad: isNearEhpad(center.lat, center.lon, 300),
     nearbyEcole: isNearEcole(center.lat, center.lon, 300),
+    nearbyCreche: isNearCreche(center.lat, center.lon, 300),
   });
 }
 
@@ -655,6 +696,7 @@ function analyseAddress(label, lat, lon) {
     label, badgeType: "address", zoneProps: zone ? zone.properties : null, albedo, veg100,
     nearbyEhpad: isNearEhpad(lat, lon, 300),
     nearbyEcole: isNearEcole(lat, lon, 300),
+    nearbyCreche: isNearCreche(lat, lon, 300),
   });
 }
 
