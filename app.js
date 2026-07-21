@@ -491,17 +491,17 @@ function buildSolutions(props, nearbyEhpad, nearbyEcole, nearbyCreche) {
       tag: "financement", tagLabel: "Financement", icon: "ti-coin",
       title: "Fonds vert, mesure renaturation",
       text: "Finance à la fois les diagnostics d'îlots de chaleur et les travaux de végétalisation, désimperméabilisation ou revêtements réfléchissants.",
-      link: "https://aides-territoires.beta.gouv.fr/aides/a086-financer-des-solutions-dadaptation-au-changem/",
+      link: "https://aides-territoires.beta.gouv.fr/aides/financer-des-solutions-dadaptation-au-changement-climatique-fondees-sur-la-renaturation-des-villes-et-des-villages-2/",
       linkLabel: "Fiche aide, Aides-territoires",
     });
   }
   if (needsEauxPluviales) {
     solutions.push({
       tag: "financement", tagLabel: "Financement", icon: "ti-droplet-dollar",
-      title: "Agences de l'eau",
-      text: "Subventionnent spécifiquement les travaux de désimperméabilisation et de gestion à la source des eaux pluviales, souvent cumulables avec le Fonds vert.",
-      link: "https://aides-territoires.beta.gouv.fr/aides/0605-favoriser-une-politique-de-gestion-integree-d/",
-      linkLabel: "Fiche aide, Aides-territoires",
+      title: "Agence de l'eau Loire-Bretagne",
+      text: "Subventionne spécifiquement les travaux de désimperméabilisation et de gestion à la source des eaux pluviales (bassin dont dépend Niort), souvent cumulable avec le Fonds vert.",
+      link: "https://agence.eau-loire-bretagne.fr/sites/aides-redevances/home/aides/collectivites-1/aides-pour-les-collectivites.html",
+      linkLabel: "Aides pour les collectivités, Agence de l'eau Loire-Bretagne",
     });
   }
   return solutions;
