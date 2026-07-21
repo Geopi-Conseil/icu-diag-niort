@@ -29,98 +29,110 @@
       <p class="panel-intro">ICU DIAG permet d'identifier les secteurs urbains les plus exposes et les plus vulnerables aux effets d'ilot de chaleur urbain. Recherchez une adresse ou cliquez sur un ilot, un batiment ou un etablissement de la carte pour obtenir un diagnostic.</p>
     </div>
 
-    <div class="panel" id="legend-panel">
-      <p class="section-title">Comment lire la carte</p>
-      <p class="legend-explain">Les zones grises representent le reste de la commune. Les zones colorees sont le <b>dernier quartile</b> de l'indice de chaleur cumulative (bati dense, peu vegetalise, albedo faible, temperature elevee), du orange au rouge fonce selon l'intensite.</p>
-      <div id="legend-gradient"></div>
-      <div id="legend-labels"><span>0.53</span><span>indice de chaleur cumulative</span><span>0.79</span></div>
-      <div class="legend-points">
-        <div><span class="dot-ring"></span> Contour renforce : ilot le plus a risque</div>
+    <div class="panel" id="diagnostic-panel">
+      <p id="diag-empty" class="hint-text">Aucune selection. Recherchez une adresse ou cliquez sur la carte pour afficher un diagnostic ici.</p>
+
+      <div id="diag-content" style="display:none;">
+        <div id="diag-header">
+          <span id="diag-badge" class="badge"></span>
+        </div>
+        <p id="diag-address">-</p>
+
+        <div class="context-row" id="context-pop">
+          <i class="ti ti-users"></i>
+          <div>
+            <p class="context-value" id="diag-population">-</p>
+            <p class="context-label">habitants estimes dans cet ilot</p>
+          </div>
+        </div>
+
+        <div class="context-row veg" id="context-veg">
+          <i class="ti ti-tree"></i>
+          <div>
+            <p class="context-value" id="diag-veg100">-</p>
+            <p class="context-label">de couvert vegetal dans un rayon de 100m</p>
+          </div>
+        </div>
+
+        <div class="indicator-card">
+          <div class="indicator-top">
+            <span>Indice de chaleur cumulative</span>
+            <span class="indicator-value" id="diag-indice">-</span>
+          </div>
+          <div class="indicator-bar"><div class="indicator-fill" id="diag-indice-fill"></div></div>
+          <p class="indicator-context" id="diag-indice-context">-</p>
+        </div>
+
+        <div class="indicator-card">
+          <div class="indicator-top">
+            <span>Albedo (reflectivite)</span>
+            <span class="indicator-value" id="diag-albedo">-</span>
+          </div>
+          <div class="indicator-bar"><div class="indicator-fill" id="diag-albedo-fill"></div></div>
+          <p class="indicator-context" id="diag-albedo-context">-</p>
+        </div>
+
+        <div class="indicator-card" id="card-pauvrete" style="display:none;">
+          <div class="indicator-top">
+            <span>Taux de pauvrete de l'ilot</span>
+            <span class="indicator-value" id="diag-pauvrete">-</span>
+          </div>
+          <div class="indicator-bar"><div class="indicator-fill" id="diag-pauvrete-fill"></div></div>
+          <p class="indicator-context" id="diag-pauvrete-context">-</p>
+        </div>
+
+        <div class="indicator-card" id="card-age" style="display:none;">
+          <div class="indicator-top">
+            <span>65 ans et plus</span>
+            <span class="indicator-value" id="diag-age">-</span>
+          </div>
+          <div class="indicator-bar"><div class="indicator-fill" id="diag-age-fill"></div></div>
+          <p class="indicator-context" id="diag-age-context">-</p>
+        </div>
+
+        <p id="diag-no-demo" class="hint-text" style="display:none;">Donnees demographiques disponibles uniquement pour les ilots du dernier quartile.</p>
+
+        <div id="solutions-section" style="display:none;">
+          <p class="section-title">Solutions cles en main</p>
+          <p class="section-subtitle">Selectionnees selon le profil de cet ilot</p>
+          <div id="solutions-list"></div>
+        </div>
       </div>
     </div>
 
+    <div class="panel" id="legend-panel">
+      <p class="section-title">Legende</p>
+
+      <label class="checkbox-row layer-row">
+        <input type="checkbox" id="mode-indice" checked />
+        <span>Indice de chaleur cumulative</span>
+      </label>
+      <div class="mini-gradient" id="grad-indice"></div>
+
+      <label class="checkbox-row layer-row">
+        <input type="checkbox" id="mode-priority" />
+        <span>Ilots les plus exposes a l'indice</span>
+      </label>
+      <div class="mini-gradient" id="grad-priority"></div>
+    </div>
+
     <div class="panel">
+      <p class="section-title">Indicateurs physiques</p>
       <label class="checkbox-row"><input type="checkbox" id="layer-albedo" /> Albedo de surface</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-lst" /> Temperatures de surface</label>
       <label class="checkbox-row"><input type="checkbox" id="layer-vegetation" /> Couvert vegetal</label>
-      <label class="checkbox-row"><input type="checkbox" id="layer-lst" /> Temperature de surface (ete)</label>
-      <label class="checkbox-row"><input type="checkbox" id="layer-buildings" /> Batiments (zoom rue)</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-buildings" /> Batiments</label>
       <p id="buildings-hint" class="hint-text" style="display:none;">Zoomez davantage pour voir les batiments.</p>
     </div>
 
     <div class="panel">
-      <label class="checkbox-row"><input type="checkbox" id="layer-ecoles" checked /> <span class="dot ecole"></span> Ecoles primaires</label>
-      <label class="checkbox-row"><input type="checkbox" id="layer-ehpad" checked /> <span class="dot ehpad"></span> EHPAD</label>
-      <label class="checkbox-row"><input type="checkbox" id="layer-creches" checked /> <span class="dot creche"></span> Creches</label>
+      <p class="section-title">Indicateurs socio-demographiques</p>
+      <label class="checkbox-row"><input type="checkbox" id="mode-population" /> Population</label>
+      <label class="checkbox-row"><input type="checkbox" id="mode-pauvrete" /> Pauvrete</label>
+      <label class="checkbox-row"><input type="checkbox" id="mode-age" /> 65 ans et plus</label>
+      <label class="checkbox-row"><input type="checkbox" id="layer-etablissements" checked /> Etablissements vulnerables</label>
+      <p class="hint-text" id="demo-hint">Disponible uniquement sur les ilots du dernier quartile.</p>
     </div>
-
-    <div class="panel" id="diagnostic-panel" style="display:none;">
-      <div id="diag-header">
-        <span id="diag-badge" class="badge"></span>
-      </div>
-      <p id="diag-address">-</p>
-
-      <div class="context-row" id="context-pop">
-        <i class="ti ti-users"></i>
-        <div>
-          <p class="context-value" id="diag-population">-</p>
-          <p class="context-label">habitants estimes dans cet ilot</p>
-        </div>
-      </div>
-
-      <div class="context-row veg" id="context-veg">
-        <i class="ti ti-tree"></i>
-        <div>
-          <p class="context-value" id="diag-veg100">-</p>
-          <p class="context-label">de couvert vegetal dans un rayon de 100m</p>
-        </div>
-      </div>
-
-      <div class="indicator-card">
-        <div class="indicator-top">
-          <span>Indice de chaleur cumulative</span>
-          <span class="indicator-value" id="diag-indice">-</span>
-        </div>
-        <div class="indicator-bar"><div class="indicator-fill" id="diag-indice-fill"></div></div>
-        <p class="indicator-context" id="diag-indice-context">-</p>
-      </div>
-
-      <div class="indicator-card">
-        <div class="indicator-top">
-          <span>Albedo (reflectivite)</span>
-          <span class="indicator-value" id="diag-albedo">-</span>
-        </div>
-        <div class="indicator-bar"><div class="indicator-fill" id="diag-albedo-fill"></div></div>
-        <p class="indicator-context" id="diag-albedo-context">-</p>
-      </div>
-
-      <div class="indicator-card" id="card-pauvrete" style="display:none;">
-        <div class="indicator-top">
-          <span>Taux de pauvrete de l'ilot</span>
-          <span class="indicator-value" id="diag-pauvrete">-</span>
-        </div>
-        <div class="indicator-bar"><div class="indicator-fill" id="diag-pauvrete-fill"></div></div>
-        <p class="indicator-context" id="diag-pauvrete-context">-</p>
-      </div>
-
-      <div class="indicator-card" id="card-age" style="display:none;">
-        <div class="indicator-top">
-          <span>65 ans et plus</span>
-          <span class="indicator-value" id="diag-age">-</span>
-        </div>
-        <div class="indicator-bar"><div class="indicator-fill" id="diag-age-fill"></div></div>
-        <p class="indicator-context" id="diag-age-context">-</p>
-      </div>
-
-      <p id="diag-no-demo" class="hint-text" style="display:none;">Donnees demographiques disponibles uniquement pour les ilots du dernier quartile.</p>
-
-      <div id="solutions-section" style="display:none;">
-        <p class="section-title">Solutions cles en main</p>
-        <p class="section-subtitle">Selectionnees selon le profil de cet ilot</p>
-        <div id="solutions-list"></div>
-      </div>
-
-    </div>
-
 
   </aside>
 

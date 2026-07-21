@@ -13,6 +13,9 @@ L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
 let zonesLayer = null;
 let zonesData = null;
 let percentiles = null;
+let demoStats = { population: [0,1], pauvrete: [0,100], age: [0,100] };
+let zoneFillMode = "indice";
+let showPriorityHighlight = false;
 let allEtablissements = { ecoles: [], ehpad: [], creches: [] };
 let rasterLayers = { albedo: null, vegetation: null, lst: null };
 let precise = { albedo: null, vegetation: null };
@@ -56,6 +59,7 @@ Promise.all([
   boundaryLayer = L.geoJSON(boundary, { style: { color: "#33322c", weight: 1.5, fill: false } }).addTo(map);
   map.fitBounds(boundaryLayer.getBounds(), { padding: [10,10] });
 
+  computeDemoStats();
   loadZones();
   refreshEtablissements();
 });
@@ -70,15 +74,65 @@ function loadZones() {
   }).addTo(map);
 }
 
+function computeDemoStats() {
+  const pops = zonesData.features.map(f => f.properties.population_est).filter(v => v != null);
+  const pauv = zonesData.features.map(f => f.properties.taux_pauvrete_est).filter(v => v != null);
+  const age = zonesData.features.map(f => f.properties.pct_65plus_est).filter(v => v != null);
+  demoStats.population = [Math.min(...pops), Math.max(...pops)];
+  demoStats.pauvrete = [Math.min(...pauv), Math.max(...pauv)];
+  demoStats.age = [Math.min(...age), Math.max(...age)];
+}
+
 function styleZone(feat) {
   const p = feat.properties;
   const isPrio = p.is_priority === 1;
-  if (isPrio) {
+  let fillColor = "#8a8878", fillOpacity = 0.06;
+
+  if (zoneFillMode === "indice") {
     const t = percentileRank("indice_chaleur", p.indice_chaleur) / 100;
-    return { fillColor: colorForFraction(t), fillOpacity: 0.75, color: "#e0182f", weight: 1.8 };
+    fillColor = colorForFraction(t);
+    fillOpacity = 0.6;
+  } else if (["population", "pauvrete", "age"].includes(zoneFillMode)) {
+    const field = { population: "population_est", pauvrete: "taux_pauvrete_est", age: "pct_65plus_est" }[zoneFillMode];
+    const val = p[field];
+    if (val != null) {
+      const [mn, mx] = demoStats[zoneFillMode];
+      const t = mx > mn ? (val - mn) / (mx - mn) : 0.5;
+      fillColor = colorForFraction(t);
+      fillOpacity = 0.65;
+    } else {
+      fillColor = "#8a8878"; fillOpacity = 0.04;
+    }
   }
-  return { fillColor: "#8a8878", fillOpacity: 0.08, color: "#8a8878", weight: 0.3, opacity: 0.3 };
+
+  if (showPriorityHighlight && isPrio) {
+    return { fillColor, fillOpacity: Math.max(fillOpacity, 0.55), color: "#e0182f", weight: 1.8 };
+  }
+  return { fillColor, fillOpacity, color: "#ffffff40", weight: 0.3 };
 }
+
+function refreshZoneStyles() {
+  if (!zonesLayer) return;
+  updateZonesVisibility();
+}
+
+["mode-indice", "mode-population", "mode-pauvrete", "mode-age"].forEach(id => {
+  document.getElementById(id).addEventListener("change", (e) => {
+    if (e.target.checked) {
+      const modeMap = { "mode-indice": "indice", "mode-population": "population", "mode-pauvrete": "pauvrete", "mode-age": "age" };
+      zoneFillMode = modeMap[id];
+      ["mode-indice", "mode-population", "mode-pauvrete", "mode-age"].filter(other => other !== id)
+        .forEach(other => { document.getElementById(other).checked = false; });
+    } else {
+      zoneFillMode = null;
+    }
+    refreshZoneStyles();
+  });
+});
+document.getElementById("mode-priority").addEventListener("change", (e) => {
+  showPriorityHighlight = e.target.checked;
+  refreshZoneStyles();
+});
 
 function percentileRank(kind, value) {
   const table = percentiles[kind];
@@ -110,14 +164,10 @@ function makeEtabIcon(type, isPrio) {
 let etabLayers = { ecoles: null, ehpad: null, creches: null };
 
 function refreshEtablissements() {
-  const configs = [
-    ["ecoles", "ecole", "layer-ecoles"],
-    ["ehpad", "ehpad", "layer-ehpad"],
-    ["creches", "creche", "layer-creches"],
-  ];
-  for (const [key, type, checkboxId] of configs) {
+  const configs = [["ecoles", "ecole"], ["ehpad", "ehpad"], ["creches", "creche"]];
+  const checked = document.getElementById("layer-etablissements").checked;
+  for (const [key, type] of configs) {
     if (etabLayers[key]) map.removeLayer(etabLayers[key]);
-    const checked = document.getElementById(checkboxId).checked;
     if (!checked) continue;
     etabLayers[key] = L.layerGroup(
       allEtablissements[key].map(f => {
@@ -131,20 +181,18 @@ function refreshEtablissements() {
     ).addTo(map);
   }
 }
-["layer-ecoles", "layer-ehpad", "layer-creches"].forEach(id => {
-  document.getElementById(id).addEventListener("change", refreshEtablissements);
-});
+document.getElementById("layer-etablissements").addEventListener("change", refreshEtablissements);
 
 // ---------- Rasters (albedo, vegetation, LST) ----------
 function updateZonesVisibility() {
   const anyRasterOn = ["layer-albedo", "layer-vegetation", "layer-lst"].some(id => document.getElementById(id).checked);
   if (!zonesLayer) return;
   zonesLayer.eachLayer(l => {
-    const p = l.feature.properties;
-    if (p.is_priority === 1) {
-      l.setStyle({ fillOpacity: anyRasterOn ? 0.12 : 0.75, opacity: anyRasterOn ? 0.35 : 1 });
+    const base = styleZone(l.feature);
+    if (anyRasterOn) {
+      l.setStyle({ ...base, fillOpacity: base.fillOpacity * 0.2, opacity: 0.3 });
     } else {
-      l.setStyle({ fillOpacity: anyRasterOn ? 0.02 : 0.08, opacity: anyRasterOn ? 0.08 : 0.3 });
+      l.setStyle(base);
     }
   });
 }
@@ -377,7 +425,8 @@ function buildSolutions(props, nearbyEhpad) {
 
 // ---------- Rendu du panneau diagnostic ----------
 function renderDiagnostic({ label, badgeType, zoneProps, albedo, veg100, nearbyEhpad }) {
-  document.getElementById("diagnostic-panel").style.display = "block";
+  document.getElementById("diag-empty").style.display = "none";
+  document.getElementById("diag-content").style.display = "block";
   document.getElementById("diag-address").textContent = label;
 
   const badge = document.getElementById("diag-badge");

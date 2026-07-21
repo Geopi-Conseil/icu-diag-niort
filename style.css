@@ -77,6 +77,12 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .solution-link:hover { text-decoration: underline; }
 
 .legend-explain { font-size: 12px; color: #6b6a63; line-height: 1.5; margin: 0 0 10px; }
+.layer-row { margin-bottom: 4px !important; font-weight: 500; }
+.mini-gradient { height: 8px; border-radius: 3px; margin: 0 0 12px 24px; width: calc(100% - 24px); }
+#grad-indice { background: linear-gradient(to right, #2c7bb6, #ffffbf, #fdae61, #d7191c, #5c0000); }
+#grad-priority { background: linear-gradient(to right, #f5a862, #de5637, #b41f1f, #5c0000); }
+#demo-hint { margin-top: 6px; }
+#diag-empty { margin: 4px 0; }
 #legend-gradient {
   height: 14px; border-radius: 4px;
   background: linear-gradient(to right, #f5a862, #de5637, #b41f1f, #5c0000);
